@@ -61,7 +61,6 @@ def get_base_ydl_opts() -> dict:
     opts = {
         "quiet": True,
         "no_warnings": True,
-        "format": "bestaudio/best",
     }
     if cookie_file:
         print(f"🍪 [INFO] Usando archivo de cookies: {cookie_file}")
