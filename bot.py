@@ -35,13 +35,22 @@ logger = logging.getLogger(__name__)
 # Directorio temporal para descargas
 TEMP_DIR = Path("downloads")
 TEMP_DIR.mkdir(exist_ok=True)
-COOKIE_FILE = Path("cookies.txt")
 
-# Si se pasó el contenido de cookies por variable de entorno (ideal para Render/Koyeb)
-env_cookies = os.getenv("YOUTUBE_COOKIES")
-if env_cookies and not COOKIE_FILE.exists():
-    with open(COOKIE_FILE, "w", encoding="utf-8") as f:
-        f.write(env_cookies)
+def find_cookie_file() -> str | None:
+    """Busca cookies desde variable de entorno o archivos locales."""
+    env_cookies = os.getenv("YOUTUBE_COOKIES")
+    cookie_path = Path("cookies.txt")
+    if env_cookies and not cookie_path.exists():
+        with open(cookie_path, "w", encoding="utf-8") as f:
+            f.write(env_cookies)
+        return str(cookie_path)
+    if cookie_path.exists():
+        return str(cookie_path)
+    for p in Path(".").glob("*cookie*.txt"):
+        return str(p)
+    return None
+
+COOKIE_PATH = find_cookie_file()
 
 # Patrón para detectar enlaces de YouTube
 YT_REGEX = re.compile(
@@ -74,8 +83,9 @@ def extract_youtube_info(url: str) -> dict:
         "extract_flat": False,
         "extractor_args": BASE_YOUTUBE_ARGS,
     }
-    if COOKIE_FILE.exists():
-        ydl_opts["cookiefile"] = str(COOKIE_FILE)
+    cookie_file = find_cookie_file()
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
@@ -108,8 +118,9 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
             "extractor_args": BASE_YOUTUBE_ARGS,
         }
 
-    if COOKIE_FILE.exists():
-        ydl_opts["cookiefile"] = str(COOKIE_FILE)
+    cookie_file = find_cookie_file()
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
