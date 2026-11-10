@@ -94,13 +94,14 @@ def extract_youtube_info(url: str) -> dict:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
 
-def download_audio(url: str, format_choice: str, output_path: str) -> str:
+def download_audio(url: str, format_choice: str, output_path: str) -> tuple[str, dict]:
     """Descarga el audio en formato mp3 o m4a usando yt-dlp."""
     ydl_opts = get_base_ydl_opts()
+    # Usar %(id)s evita cualquier error con caracteres especiales o emojis en el titulo
     if format_choice == "mp3":
         ydl_opts.update({
             "format": "bestaudio/best",
-            "outtmpl": f"{output_path}/%(title)s.%(ext)s",
+            "outtmpl": f"{output_path}/%(id)s.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "mp3",
@@ -110,7 +111,7 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
     else:  # m4a
         ydl_opts.update({
             "format": "bestaudio[ext=m4a]/bestaudio/best",
-            "outtmpl": f"{output_path}/%(title)s.%(ext)s",
+            "outtmpl": f"{output_path}/%(id)s.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "m4a",
@@ -120,14 +121,12 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
         # Buscar el archivo generado en output_path
-        downloaded_files = list(Path(output_path).glob(f"*.{format_choice}"))
-        if not downloaded_files:
-            # Fallback en caso de que no tenga exactamente la extensión
+        files = [f for f in Path(output_path).glob(f"*.{format_choice}")]
+        if not files:
             files = [f for f in Path(output_path).glob("*") if f.is_file()]
-            if files:
-                return str(files[0])
+        if not files:
             raise FileNotFoundError("No se encontró el archivo de audio descargado.")
-        return str(downloaded_files[0])
+        return str(files[0]), info
 
 async def start_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """Comando /start."""
@@ -219,16 +218,18 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
     task_dir = TEMP_DIR / task_id
     task_dir.mkdir(parents=True, exist_ok=True)
 
-    status_text = f"⏳ Descargando y convirtiendo a *{format_choice.upper()}*... Esto puede demorar unos segundos."
-    # Notificar al usuario cambiando o respondiendo
-    await query.edit_message_caption(
-        caption=f"{query.message.caption or ''}\n\n{status_text}",
-        parse_mode=ParseMode.MARKDOWN,
-    )
+    status_text = f"⏳ Descargando y convirtiendo a {format_choice.upper()}... Por favor espera."
+    try:
+        if query.message.photo:
+            await query.edit_message_caption(caption=status_text)
+        else:
+            await query.edit_message_text(text=status_text)
+    except Exception as e:
+        logger.warning(f"No se pudo editar el mensaje de estado: {e}")
 
     try:
         # Descarga en segundo plano
-        file_path = await asyncio.to_thread(download_audio, url, format_choice, str(task_dir))
+        file_path, info = await asyncio.to_thread(download_audio, url, format_choice, str(task_dir))
         
         # Verificar tamaño del archivo (Límite de bots de Telegram: 50MB)
         file_size_mb = os.path.getsize(file_path) / (1024 * 1024)
@@ -238,26 +239,30 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
             )
             return
 
-        # Enviar el archivo de audio
+        title = info.get("title", Path(file_path).stem)
+        uploader = info.get("uploader", "YouTube")
+        duration = info.get("duration")
+
+        # Enviar el archivo de audio directamente al chat
         with open(file_path, "rb") as audio_file:
             await context.bot.send_audio(
                 chat_id=query.message.chat_id,
                 audio=audio_file,
-                title=Path(file_path).stem,
-                filename=Path(file_path).name,
-                caption=f"✅ Descarga completada en *{format_choice.upper()}*",
-                parse_mode=ParseMode.MARKDOWN,
+                title=title,
+                performer=uploader,
+                duration=duration,
+                caption=f"✅ {title}\nFormato: {format_choice.upper()}",
             )
 
     except Exception as e:
-        logger.error(f"Error en descarga: {e}")
+        logger.error(f"Error en descarga: {e}", exc_info=True)
         error_msg = str(e)
         if "ffmpeg" in error_msg.lower():
             await query.message.reply_text(
                 "❌ Error: Se requiere FFmpeg instalado en el sistema para la conversión de audio."
             )
         else:
-            await query.message.reply_text(f"❌ Error al descargar el audio: {error_msg}")
+            await query.message.reply_text(f"❌ Error al procesar el audio: {error_msg}")
 
     finally:
         # Limpieza de archivos temporales
