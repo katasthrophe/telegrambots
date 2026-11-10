@@ -50,19 +50,30 @@ def find_cookie_file() -> str | None:
         return str(p)
     return None
 
-COOKIE_PATH = find_cookie_file()
-
-# Patrón para detectar enlaces de YouTube
-YT_REGEX = re.compile(
-    r"(https?://(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]+)"
-)
-
-# Configuración de clientes para evitar bloqueos de datacenter en YouTube
-BASE_YOUTUBE_ARGS = {
-    "youtube": {
-        "player_client": ["android", "ios"]
+def get_base_ydl_opts() -> dict:
+    """Construye las opciones base de yt-dlp optimizadas para evitar bloqueos."""
+    cookie_file = find_cookie_file()
+    opts = {
+        "quiet": True,
+        "no_warnings": True,
     }
-}
+    if cookie_file:
+        print(f"🍪 [INFO] Usando archivo de cookies: {cookie_file}")
+        opts["cookiefile"] = cookie_file
+        # Con cookies de navegador, el cliente web y mweb son los correctos
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["web", "mweb"]
+            }
+        }
+    else:
+        print("⚠️ [ADVERTENCIA] No se encontro archivo de cookies ni variable YOUTUBE_COOKIES")
+        opts["extractor_args"] = {
+            "youtube": {
+                "player_client": ["android", "ios", "web"]
+            }
+        }
+    return opts
 
 def format_duration(seconds: int | None) -> str:
     """Convierte segundos a formato MM:SS o HH:MM:SS."""
@@ -76,24 +87,18 @@ def format_duration(seconds: int | None) -> str:
 
 def extract_youtube_info(url: str) -> dict:
     """Extrae metadatos del video sin descargar."""
-    ydl_opts = {
-        "quiet": True,
-        "no_warnings": True,
-        "skip_download": True,
-        "extract_flat": False,
-        "extractor_args": BASE_YOUTUBE_ARGS,
-    }
-    cookie_file = find_cookie_file()
-    if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
+    ydl_opts = get_base_ydl_opts()
+    ydl_opts["skip_download"] = True
+    ydl_opts["extract_flat"] = False
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
 
 def download_audio(url: str, format_choice: str, output_path: str) -> str:
     """Descarga el audio en formato mp3 o m4a usando yt-dlp."""
+    ydl_opts = get_base_ydl_opts()
     if format_choice == "mp3":
-        ydl_opts = {
+        ydl_opts.update({
             "format": "bestaudio/best",
             "outtmpl": f"{output_path}/%(title)s.%(ext)s",
             "postprocessors": [{
@@ -101,26 +106,16 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
                 "preferredcodec": "mp3",
                 "preferredquality": "192",
             }],
-            "quiet": True,
-            "no_warnings": True,
-            "extractor_args": BASE_YOUTUBE_ARGS,
-        }
+        })
     else:  # m4a
-        ydl_opts = {
+        ydl_opts.update({
             "format": "bestaudio[ext=m4a]/bestaudio/best",
             "outtmpl": f"{output_path}/%(title)s.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
                 "preferredcodec": "m4a",
             }],
-            "quiet": True,
-            "no_warnings": True,
-            "extractor_args": BASE_YOUTUBE_ARGS,
-        }
-
-    cookie_file = find_cookie_file()
-    if cookie_file:
-        ydl_opts["cookiefile"] = cookie_file
+        })
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         info = ydl.extract_info(url, download=True)
