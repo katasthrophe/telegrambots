@@ -36,6 +36,11 @@ logger = logging.getLogger(__name__)
 TEMP_DIR = Path("downloads")
 TEMP_DIR.mkdir(exist_ok=True)
 
+# Patrón para detectar enlaces de YouTube
+YT_REGEX = re.compile(
+    r"(https?://(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]+)"
+)
+
 def find_cookie_file() -> str | None:
     """Busca cookies desde variable de entorno o archivos locales."""
     env_cookies = os.getenv("YOUTUBE_COOKIES")
