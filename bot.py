@@ -56,28 +56,16 @@ def find_cookie_file() -> str | None:
     return None
 
 def get_base_ydl_opts() -> dict:
-    """Construye las opciones base de yt-dlp optimizadas para evitar bloqueos."""
+    """Construye las opciones base de yt-dlp."""
     cookie_file = find_cookie_file()
     opts = {
         "quiet": True,
         "no_warnings": True,
+        "format": "bestaudio/best",
     }
     if cookie_file:
         print(f"🍪 [INFO] Usando archivo de cookies: {cookie_file}")
         opts["cookiefile"] = cookie_file
-        # Con cookies de navegador, el cliente web y mweb son los correctos
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["web", "mweb"]
-            }
-        }
-    else:
-        print("⚠️ [ADVERTENCIA] No se encontro archivo de cookies ni variable YOUTUBE_COOKIES")
-        opts["extractor_args"] = {
-            "youtube": {
-                "player_client": ["android", "ios", "web"]
-            }
-        }
     return opts
 
 def format_duration(seconds: int | None) -> str:
@@ -102,7 +90,6 @@ def extract_youtube_info(url: str) -> dict:
 def download_audio(url: str, format_choice: str, output_path: str) -> tuple[str, dict]:
     """Descarga el audio en formato mp3 o m4a usando yt-dlp."""
     ydl_opts = get_base_ydl_opts()
-    # Usar %(id)s evita cualquier error con caracteres especiales o emojis en el titulo
     if format_choice == "mp3":
         ydl_opts.update({
             "format": "bestaudio/best",
@@ -115,7 +102,7 @@ def download_audio(url: str, format_choice: str, output_path: str) -> tuple[str,
         })
     else:  # m4a
         ydl_opts.update({
-            "format": "bestaudio[ext=m4a]/bestaudio/best",
+            "format": "bestaudio/best",
             "outtmpl": f"{output_path}/%(id)s.%(ext)s",
             "postprocessors": [{
                 "key": "FFmpegExtractAudio",
