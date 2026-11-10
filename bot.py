@@ -4,6 +4,9 @@ import uuid
 import shutil
 import asyncio
 import logging
+import threading
+import http.server
+import socketserver
 from pathlib import Path
 from dotenv import load_dotenv
 import yt_dlp
@@ -255,11 +258,36 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         if task_dir.exists():
             shutil.rmtree(task_dir, ignore_errors=True)
 
+def run_health_server():
+    """Servidor web ultraligero para responder al healthcheck de Render y mantener el servicio 'Live'."""
+    port = int(os.environ.get("PORT", 10000))
+    class HealthHandler(http.server.SimpleHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(200)
+            self.send_header("Content-type", "text/plain; charset=utf-8")
+            self.end_headers()
+            self.wfile.write(b"Bot is alive and healthy!")
+
+        def log_message(self, format, *args):
+            pass  # Silenciar logs HTTP para no saturar la consola
+
+    try:
+        with socketserver.TCPServer(("", port), HealthHandler) as httpd:
+            logger.info(f"Servidor de salud escuchando en el puerto {port}")
+            httpd.serve_forever()
+    except Exception as e:
+        logger.error(f"Error en servidor de salud: {e}")
+
 def main():
     if not TOKEN:
         print("❌ ERROR: No se encontró TELEGRAM_BOT_TOKEN en el archivo .env")
         print("Por favor crea un archivo .env y agrega: TELEGRAM_BOT_TOKEN=tu_token")
         return
+
+    # Si estamos en Render u otro servicio en la nube con variable PORT, iniciamos el servidor web
+    port = os.getenv("PORT")
+    if port:
+        threading.Thread(target=run_health_server, daemon=True).start()
 
     print("🤖 Iniciando Bot de Telegram...")
     application = Application.builder().token(TOKEN).build()
