@@ -34,10 +34,23 @@ TEMP_DIR = Path("downloads")
 TEMP_DIR.mkdir(exist_ok=True)
 COOKIE_FILE = Path("cookies.txt")
 
+# Si se pasó el contenido de cookies por variable de entorno (ideal para Render/Koyeb)
+env_cookies = os.getenv("YOUTUBE_COOKIES")
+if env_cookies and not COOKIE_FILE.exists():
+    with open(COOKIE_FILE, "w", encoding="utf-8") as f:
+        f.write(env_cookies)
+
 # Patrón para detectar enlaces de YouTube
 YT_REGEX = re.compile(
     r"(https?://(?:www\.|m\.)?(?:youtube\.com/watch\?v=|youtu\.be/|youtube\.com/shorts/)[a-zA-Z0-9_-]+)"
 )
+
+# Configuración de clientes para evitar bloqueos de datacenter en YouTube
+BASE_YOUTUBE_ARGS = {
+    "youtube": {
+        "player_client": ["android", "ios"]
+    }
+}
 
 def format_duration(seconds: int | None) -> str:
     """Convierte segundos a formato MM:SS o HH:MM:SS."""
@@ -56,6 +69,7 @@ def extract_youtube_info(url: str) -> dict:
         "no_warnings": True,
         "skip_download": True,
         "extract_flat": False,
+        "extractor_args": BASE_YOUTUBE_ARGS,
     }
     if COOKIE_FILE.exists():
         ydl_opts["cookiefile"] = str(COOKIE_FILE)
@@ -76,6 +90,7 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
             }],
             "quiet": True,
             "no_warnings": True,
+            "extractor_args": BASE_YOUTUBE_ARGS,
         }
     else:  # m4a
         ydl_opts = {
@@ -87,6 +102,7 @@ def download_audio(url: str, format_choice: str, output_path: str) -> str:
             }],
             "quiet": True,
             "no_warnings": True,
+            "extractor_args": BASE_YOUTUBE_ARGS,
         }
 
     if COOKIE_FILE.exists():
