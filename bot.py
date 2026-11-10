@@ -46,7 +46,7 @@ def find_cookie_file() -> str | None:
     """Busca cookies desde variable de entorno o archivos locales."""
     env_cookies = os.getenv("YOUTUBE_COOKIES")
     cookie_path = Path("cookies.txt")
-    if env_cookies and not cookie_path.exists():
+    if env_cookies:
         with open(cookie_path, "w", encoding="utf-8") as f:
             f.write(env_cookies)
         return str(cookie_path)
@@ -80,9 +80,15 @@ def format_duration(seconds: int | None) -> str:
 
 def extract_youtube_info(url: str) -> dict:
     """Extrae metadatos del video sin descargar."""
-    ydl_opts = get_base_ydl_opts()
-    ydl_opts["skip_download"] = True
-    ydl_opts["extract_flat"] = False
+    ydl_opts = {
+        "quiet": True,
+        "no_warnings": True,
+        "extract_flat": True,
+        "skip_download": True,
+    }
+    cookie_file = find_cookie_file()
+    if cookie_file:
+        ydl_opts["cookiefile"] = cookie_file
 
     with yt_dlp.YoutubeDL(ydl_opts) as ydl:
         return ydl.extract_info(url, download=False)
