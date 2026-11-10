@@ -1,0 +1,9 @@
+services:
+  bot:
+    build: .
+    restart: unless-stopped
+    environment:
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN}
+    volumes:
+      # Opcional: si necesitas pasar un archivo de cookies de YouTube
+      - ./cookies.txt:/app/cookies.txt:ro
