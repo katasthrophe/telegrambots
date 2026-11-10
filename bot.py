@@ -12,6 +12,7 @@ from dotenv import load_dotenv
 import yt_dlp
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.constants import ParseMode
+from telegram.request import HTTPXRequest
 from telegram.ext import (
     Application,
     CommandHandler,
@@ -151,13 +152,14 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         uploader = info.get("uploader", "Desconocido")
         duration = info.get("duration", 0)
         formatted_duration = format_duration(duration)
-        thumbnail = info.get("thumbnail")
         video_id = info.get("id")
+        # YouTube siempre entrega JPEG valido en esta direccion (evita el error WebP de Telegram)
+        thumbnail = f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg"
 
         caption = (
-            f"🎶 *{title}*\n\n"
-            f"👤 *Canal:* {uploader}\n"
-            f"⏱ *Duración:* {formatted_duration}\n\n"
+            f"🎶 {title}\n\n"
+            f"👤 Canal: {uploader}\n"
+            f"⏱ Duración: {formatted_duration}\n\n"
             "Elige el formato de descarga:"
         )
 
@@ -169,19 +171,24 @@ async def handle_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ]
         reply_markup = InlineKeyboardMarkup(keyboard)
 
-        # Si hay miniatura disponible, enviamos la foto con la botonera
+        # Intentar enviar la foto con la botonera; si Telegram rechaza el formato de la imagen, usar texto
+        photo_sent = False
         if thumbnail:
-            await update.message.reply_photo(
-                photo=thumbnail,
-                caption=caption,
-                parse_mode=ParseMode.MARKDOWN,
-                reply_markup=reply_markup,
-            )
-            await status_msg.delete()
-        else:
+            try:
+                await update.message.reply_photo(
+                    photo=thumbnail,
+                    caption=caption,
+                    reply_markup=reply_markup,
+                )
+                await status_msg.delete()
+                photo_sent = True
+            except Exception as pe:
+                logger.warning(f"Telegram rechazó la URL de la miniatura ({pe}), enviando solo texto.")
+                photo_sent = False
+
+        if not photo_sent:
             await status_msg.edit_text(
                 caption,
-                parse_mode=ParseMode.MARKDOWN,
                 reply_markup=reply_markup,
             )
 
@@ -234,7 +241,7 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
         uploader = info.get("uploader", "YouTube")
         duration = info.get("duration")
 
-        # Enviar el archivo de audio directamente al chat
+        # Enviar el archivo de audio directamente al chat con tiempo de espera extendido
         with open(file_path, "rb") as audio_file:
             await context.bot.send_audio(
                 chat_id=query.message.chat_id,
@@ -243,6 +250,8 @@ async def handle_callback_query(update: Update, context: ContextTypes.DEFAULT_TY
                 performer=uploader,
                 duration=duration,
                 caption=f"✅ {title}\nFormato: {format_choice.upper()}",
+                read_timeout=180,
+                write_timeout=180,
             )
 
     except Exception as e:
@@ -292,7 +301,13 @@ def main():
         threading.Thread(target=run_health_server, daemon=True).start()
 
     print("🤖 Iniciando Bot de Telegram...")
-    application = Application.builder().token(TOKEN).build()
+    # Configurar tiempos de espera amplios para permitir subir archivos de audio de varios megabytes
+    request_config = HTTPXRequest(
+        connect_timeout=60.0,
+        read_timeout=180.0,
+        write_timeout=180.0,
+    )
+    application = Application.builder().token(TOKEN).request(request_config).build()
 
     application.add_handler(CommandHandler("start", start_command))
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND, handle_message))
